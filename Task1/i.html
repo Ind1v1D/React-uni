@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simple Async Task Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0E18;
+    --card:#141B2E;
+    --border:#26314F;
+    --text:#F0F4FC;
+    --text-dim:#93A0C2;
+    --text-faint:#586088;
+    --cyan:#57E3D6;
+    --amber:#F7B955;
+    --green:#6EE7A0;
+    --violet:#8C93FF;
+    --mono:'JetBrains Mono', ui-monospace, monospace;
+    --primary:'Montserrat', system-ui, sans-serif;
+    --accent:'Cinzel', serif;
+  }
+
+  *{box-sizing:border-box;}
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--primary);
+    position:relative;
+  }
+
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 90%);
+    pointer-events:none;
+    z-index:0;
+  }
+
+  .blob{
+    position:fixed;
+    border-radius:50%;
+    filter:blur(90px);
+    opacity:0.28;
+    pointer-events:none;
+    z-index:0;
+  }
+  .blob--1{width:480px;height:480px;top:-160px;left:-120px;background:var(--violet);}
+  .blob--2{width:420px;height:420px;top:100px;right:-140px;background:var(--cyan);}
+
+  main{
+    position:relative;
+    z-index:1;
+    max-width:700px;
+    margin:0 auto;
+    padding:56px 24px 80px;
+  }
+
+  h1{
+    font-family:var(--primary);
+    font-size:clamp(28px,5vw,40px);
+    margin:0 0 8px;
+    font-weight:800;
+    letter-spacing:-0.02em;
+    text-transform:uppercase;
+  }
+  p.intro{
+    color:var(--text-dim);
+    margin:0 0 8px;
+    line-height:1.6;
+    font-weight:400;
+  }
+
+  h2{
+    font-family:var(--accent);
+    font-size:20px;
+    font-weight:600;
+    margin:40px 0 6px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:8px;
+    letter-spacing:0.04em;
+    color:var(--cyan);
+  }
+  p.note{
+    color:var(--text-dim);
+    font-size:14px;
+    line-height:1.6;
+    margin:0 0 14px;
+  }
+
+  .task{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .task-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .task-name{ font-weight:600; font-family:var(--primary); }
+
+  .status{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-faint);
+  }
+  .status.running{ color:var(--amber); }
+  .status.done{ color:var(--green); }
+
+  button{
+    font-family:var(--primary);
+    background:var(--cyan);
+    color:#0A0E18;
+    border:none;
+    padding:8px 16px;
+    border-radius:8px;
+    font-weight:700;
+    font-size:13px;
+    cursor:pointer;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+  }
+  button:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  .runs{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-dim);
+    margin-left:10px;
+  }
+
+  .output{
+    font-family:var(--mono);
+    font-size:12.5px;
+    color:var(--text-dim);
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-top:10px;
+    white-space:pre-line;
+    min-height:18px;
+  }
+
+  footer{
+    margin-top:60px;
+    text-align:center;
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--text-faint);
+  }
+</style>
+</head>
+<body>
+
+<div class="blob blob--1"></div>
+<div class="blob blob--2"></div>
+
+<main>
+
+  <h1>Simple Async Task Runner</h1>
+  <p class="intro">A beginner-friendly demo of setTimeout, async/await, Promise.all, and the event loop.</p>
+
+  <h2>1. Run a task</h2>
+  <p class="note">Click "Run" to simulate a task that takes a random amount of time to finish.</p>
+
+  <div class="task" id="task-users">
+    <div class="task-header">
+      <span class="task-name">Load Users</span>
+      <span class="status" id="status-users">idle</span>
+    </div>
+    <button onclick="runTask('users')">Run</button>
+    <span class="runs" id="runs-users">runs: 0</span>
+  </div>
+
+  <div class="task" id="task-posts">
+    <div class="task-header">
+      <span class="task-name">Load Posts</span>
+      <span class="status" id="status-posts">idle</span>
+    </div>
+    <button onclick="runTask('posts')">Run</button>
+    <span class="runs" id="runs-posts">runs: 0</span>
+  </div>
+
+  <div class="task" id="task-comments">
+    <div class="task-header">
+      <span class="task-name">Load Comments</span>
+      <span class="status" id="status-comments">idle</span>
+    </div>
+    <button onclick="runTask('comments')">Run</button>
+    <span class="runs" id="runs-comments">runs: 0</span>
+  </div>
+
+  <h2>2. Sequential vs. concurrent</h2>
+  <p class="note">Same three fake load times, run two ways: one <code>await</code> at a time, then all together with <code>Promise.all</code>.</p>
+  <button onclick="compareSpeed()">Run comparison</button>
+  <div class="output" id="compareOutput">Click the button to see the difference.</div>
+
+  <h2>3. Event loop order</h2>
+  <p class="note">Guess the order these four lines will print, then click run.</p>
+  <button onclick="runEventLoopDemo()">Run event loop demo</button>
+  <div class="output" id="loopOutput">Click the button to see the actual print order.</div>
+
+  <footer>closures keep state private · promises describe "later" · the event loop never blocks</footer>
+
+</main>
+
+<script>
+  const taskRuns = { users: 0, posts: 0, comments: 0 };
+
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  async function runTask(name) {
+    const statusEl = document.getElementById('status-' + name);
+    const runsEl = document.getElementById('runs-' + name);
+    const button = document.querySelector('#task-' + name + ' button');
+
+    button.disabled = true;
+    statusEl.textContent = 'running';
+    statusEl.className = 'status running';
+
+    const loadTime = 500 + Math.floor(Math.random() * 1500);
+    await wait(loadTime);
+
+    taskRuns[name] += 1;
+    statusEl.textContent = 'done (' + loadTime + 'ms)';
+    statusEl.className = 'status done';
+    runsEl.textContent = 'runs: ' + taskRuns[name];
+    button.disabled = false;
+  }
+
+  async function compareSpeed() {
+    const output = document.getElementById('compareOutput');
+    output.textContent = 'Running...';
+
+    const times = [
+      500 + Math.floor(Math.random() * 1000),
+      500 + Math.floor(Math.random() * 1000),
+      500 + Math.floor(Math.random() * 1000)
+    ];
+
+    const seqStart = Date.now();
+    for (let i = 0; i < times.length; i++) {
+      await wait(times[i]);
+    }
+    const seqTime = Date.now() - seqStart;
+
+    const conStart = Date.now();
+    await Promise.all(times.map(wait));
+    const conTime = Date.now() - conStart;
+
+    output.textContent =
+      'Times used: ' + times.join('ms, ') + 'ms\n' +
+      'Sequential took: ' + seqTime + 'ms\n' +
+      'Concurrent took: ' + conTime + 'ms\n' +
+      '(Concurrent is roughly the slowest one alone. Sequential is roughly the sum of all three.)';
+  }
+
+  function runEventLoopDemo() {
+    const output = document.getElementById('loopOutput');
+    output.textContent = '';
+    const lines = [];
+
+    function print(text) {
+      lines.push(text);
+      output.textContent = lines.join('\n');
+    }
+
+    print('1: script start');
+
+    setTimeout(function () {
+      print('2: setTimeout callback (macrotask)');
+    }, 0);
+
+    Promise.resolve().then(function () {
+      print('3: promise .then callback (microtask)');
+    });
+
+    print('4: script end');
+  }
+</script>
+</body>
+</html>
