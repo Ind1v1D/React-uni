@@ -1,33 +1,55 @@
-# ⚡ Async Task Runner & Event Loop Visualizer
+# Simple Task Runner — Assignment #1
 
-A lightweight, interactive web tool built with vanilla JavaScript and CSS to demonstrate core asynchronous JavaScript concepts, including `setTimeout`, `async/await`, `Promise.all`, and **Event Loop** execution priority.
+A single-file HTML/CSS/JS demo that teaches three core async JavaScript concepts through interactive buttons: `setTimeout`, `async`/`await`, `Promise.all`, and the event loop (call stack → microtask queue → macrotask queue).
 
----
+No build step, no dependencies to install — just open the HTML file in a browser.
 
-## 🚀 Features
+## How to run
 
-* **Task Runner Engine:** Interactive simulation of asynchronous tasks with random latency profiles.
-* **Sequential vs. Concurrent Comparison:** Visual demonstration of how `await` inside loops differs from `Promise.all` in execution speed ($\text{T}_{\text{sum}}$ vs. $\text{T}_{\text{max}}$).
-* **Event Loop Order Demo:** Clear step-by-step breakdown of how the Call Stack handles synchronous code, Microtasks (Promises), and Macrotasks (`setTimeout`).
-* **Modern UI:** Responsive layout with dynamic dark theme, radial grid overlays, and ambient glowing accents built without external framework dependencies.
+Open the `.html` file directly in any modern browser (double-click it, or right-click → Open With → your browser). Everything runs client-side; nothing needs to be served or installed.
 
----
+## What's on the page
 
-## 📁 Project Structure
+### 1. Run a task
+Three cards (`Load Users`, `Load Posts`, `Load Comments`), each with its own **Run** button. Clicking one simulates a network request: the status flips to `running`, waits a random 500–2000ms, then flips to `done (Xms)` and bumps a run counter. The button is disabled while its task is in flight so you can't double-fire it.
 
-```text
-.
-├── index.html       # Combined structure, styles, and task execution logic
-└── README.md        # Project documentation
-```
-🛠️ How It Works
-1. Promisifying Asynchronous Delays
-The project wraps the standard callback-based setTimeout API into a Promise helper function:
-```JavaScript
-function wait(ms) {
-  return new Promise(function (resolve) {
-    setTimeout(resolve, ms);
-  });
-}
-```
-2. Execution ParadigmsMethodBehaviorExecution Time FormulaSequentialRuns tasks one after another using a for loop with await.$T_{\text{total}} = T_1 + T_2 + T_3$ConcurrentRuns all tasks simultaneously using Promise.all.$T_{\text{total}} = \max(T_1, T_2, T_3)$3. Event Loop Priority HierarchyThe event loop demonstration outputs logs in the following strict order:Synchronous Stack: 1: script start $\rightarrow$ 4: script endMicrotask Queue: 3: promise .then callback (High Priority)Macrotask Queue: 2: setTimeout callback (Low Priority)💻 Quick StartClone or download this repository.Open index.html directly in any web browser. No npm install, build steps, or server setup required.
+### 2. Sequential vs. concurrent
+Generates three random load times, then runs them two different ways using the *same* three numbers so the comparison is fair:
+- **Sequential** — one `await` at a time in a `for` loop. Total time ≈ the sum of all three.
+- **Concurrent** — all three started at once via `Promise.all`. Total time ≈ the slowest one alone.
+
+The result box prints both times so you can see the difference for yourself.
+
+### 3. Event loop order
+Prints four lines from a mix of synchronous code, a `setTimeout`, and a `Promise.then`. Guess the print order before you click — the actual order (`1, 4, 3, 2`) demonstrates that synchronous code always runs first, then all pending microtasks (promises), then macrotasks (timers).
+
+## Code structure
+
+Everything lives in one HTML file:
+
+| Section | What it contains |
+|---|---|
+| `<style>` | Design tokens (`:root` custom properties), background grid + blob decoration, and styling for cards/buttons/output boxes |
+| `<body>` | Three `<div class="task">` cards, a comparison section, and an event-loop section — each with a button wired via an inline `onclick` |
+| `<script>` | Four functions: `wait()`, `runTask()`, `compareSpeed()`, `runEventLoopDemo()` |
+
+### Functions
+
+- **`wait(ms)`** — wraps `setTimeout` in a `Promise` so it can be used with `await`. This is the one utility every other async function in the file depends on.
+- **`runTask(name)`** — looks up the DOM elements for the given task name, sets status to `running`, `await`s a random delay via `wait()`, then updates status, run count, and re-enables the button.
+- **`compareSpeed()`** — generates three shared random durations, times a sequential `for` loop of `await wait(...)` calls, then times a concurrent `Promise.all(times.map(wait))` call, and prints both totals.
+- **`runEventLoopDemo()`** — runs four `print()` calls interleaved with a `setTimeout` and a `Promise.then`, demonstrating call-stack → microtask → macrotask ordering.
+
+State is kept in one plain object, `taskRuns = { users: 0, posts: 0, comments: 0 }` — no closures, no classes, just a shared object all the functions read and write.
+
+## Design
+
+- **Fonts:** Montserrat (`--primary`, body/headings/buttons), Cinzel (`--accent`, section headings), JetBrains Mono (`--mono`, status text and output boxes) — loaded from Google Fonts.
+- **Palette:** dark background (`#0A0E18`) with card surfaces (`#141B2E`), a cyan/violet blob backdrop, and status colors: gray = idle, amber = running, green = done.
+
+## Concepts this project demonstrates
+
+- Turning a callback-based API (`setTimeout`) into a promise with `new Promise(resolve => ...)`
+- `async`/`await` for writing asynchronous code that reads top-to-bottom
+- The real difference between sequential `await` calls and `Promise.all`
+- The JavaScript event loop: synchronous code → microtask queue (promises) → macrotask queue (timers)
