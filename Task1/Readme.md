@@ -19,9 +19,15 @@ A lightweight, interactive web tool built with vanilla JavaScript and CSS to dem
 .
 ├── index.html       # Combined structure, styles, and task execution logic
 └── README.md        # Project documentation
-🛠️ How It Works1. Promisifying Asynchronous DelaysThe project wraps the standard callback-based setTimeout API into a Promise helper function:JavaScriptfunction wait(ms) {
+```
+🛠️ How It Works
+1. Promisifying Asynchronous Delays
+The project wraps the standard callback-based setTimeout API into a Promise helper function:
+```JavaScript
+function wait(ms) {
   return new Promise(function (resolve) {
     setTimeout(resolve, ms);
   });
 }
-2. Execution ParadigmsMethodBehaviorExecution Time FormulaSequentialRuns tasks one after another using a for loop with await.$T_{\text{total}} = T_1 + T_2 + T_3$ConcurrentRuns all tasks simultaneously using Promise.all.$T_{\text{total}} = \max(T_1, T_2, T_3)$3. Event Loop Priority HierarchyThe event loop demonstration outputs logs in the following strict order:Synchronous Stack: 1: script start $\rightarrow$ 4: script endMicrotask Queue: 3: promise .then callback (High Priority)Macrotask Queue: 2: setTimeout callback (Low Priority)💻 Quick StartClone or download this repository.Open index.html directly in any web browser. No npm install, build steps, or server setup required.📖 Practical Concepts CoveredPromise Lifecycle (pending $\rightarrow$ fulfilled / rejected)Non-blocking I/O and non-blocking UI state managementMain Thread vs. Task Queue schedulingMicrotask vs. Macrotask queue prioritization
+```
+2. Execution ParadigmsMethodBehaviorExecution Time FormulaSequentialRuns tasks one after another using a for loop with await.$T_{\text{total}} = T_1 + T_2 + T_3$ConcurrentRuns all tasks simultaneously using Promise.all.$T_{\text{total}} = \max(T_1, T_2, T_3)$3. Event Loop Priority HierarchyThe event loop demonstration outputs logs in the following strict order:Synchronous Stack: 1: script start $\rightarrow$ 4: script endMicrotask Queue: 3: promise .then callback (High Priority)Macrotask Queue: 2: setTimeout callback (Low Priority)💻 Quick StartClone or download this repository.Open index.html directly in any web browser. No npm install, build steps, or server setup required.
