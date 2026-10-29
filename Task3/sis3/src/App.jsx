@@ -1,177 +1,256 @@
-import { useState } from "react";
-
-const STATUSES = ["todo", "doing", "done"];
-const STATUS_LABEL = { todo: "To do", doing: "In progress", done: "Done" };
-const PRIORITIES = ["low", "medium", "high"];
-
-const initialTodos = [
-  { id: 1, title: "Read chapter on reconciliation", priority: "high", status: "doing", resetKey: 0 },
-  { id: 2, title: "Finish React homework", priority: "high", status: "todo", resetKey: 0 },
-  { id: 3, title: "Push project to GitHub", priority: "medium", status: "todo", resetKey: 0 },
-  { id: 4, title: "Buy printer paper", priority: "low", status: "done", resetKey: 0 },
-];
-
-/* Child with its own form state */
-function AddTodoForm({ onAdd }) {
-  console.log("render: AddTodoForm");
-  const [title, setTitle] = useState("");
-  const [priority, setPriority] = useState("medium");
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!title.trim()) return;
-    onAdd(title.trim(), priority);
-    setTitle("");
-  }
-
-  return (
-    <form className="add-form" onSubmit={handleSubmit}>
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="What needs doing?"
-        aria-label="Task title"
-      />
-      <select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Priority">
-        {PRIORITIES.map((p) => (
-          <option key={p} value={p}>{p} priority</option>
-        ))}
-      </select>
-      <button type="submit" className="primary">Add task</button>
-    </form>
-  );
-}
-
-/* Child with LOCAL state: expanded, note, focus sessions.
-   Parent state (status, priority, title) comes in as props. */
-function TodoItem({ todo, visible, onStatusChange, onRemove, onResetLocal }) {
-  console.log(`render: TodoItem #${todo.id} "${todo.title}" (status=${todo.status}, visible=${visible})`);
-  const [expanded, setExpanded] = useState(false);
-  const [note, setNote] = useState("");
-  const [sessions, setSessions] = useState(0);
-
-  // Hooks above always run, so state survives while hidden by a filter.
-  if (!visible) return null;
-
-  return (
-    <li className="item">
-      <div className="item-main">
-        <div className="item-title">
-          <span className={`dot status-${todo.status}`} title={STATUS_LABEL[todo.status]} />
-          <span className={todo.status === "done" ? "struck" : ""}>{todo.title}</span>
-          <span className={`tag priority-${todo.priority}`}>{todo.priority}</span>
-        </div>
-        <div className="item-actions">
-          <select
-            value={todo.status}
-            onChange={(e) => onStatusChange(todo.id, e.target.value)}
-            aria-label={`Status of ${todo.title}`}
-          >
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-            ))}
-          </select>
-          <button onClick={() => setSessions(sessions + 1)}>
-            Focus +1 <b>{sessions}</b>
-          </button>
-          <button onClick={() => setExpanded(!expanded)}>{expanded ? "Hide note" : "Note"}</button>
-          <button onClick={() => onResetLocal(todo.id)}>Reset local</button>
-          <button className="danger" onClick={() => onRemove(todo.id)}>Remove</button>
-        </div>
-      </div>
-      {expanded && (
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Write a note for this task…"
-          rows={2}
-        />
-      )}
-    </li>
-  );
-}
+import { useState, useEffect } from "react";
+import {
+  fetchTasks, fetchTaskDetails, createTask, updateTask, removeTask, completeTask,
+} from "./api/fakeApi";
+import TaskForm from "./components/TaskForm";
 
 export default function App() {
-  const [todos, setTodos] = useState(initialTodos);
-  const [filter, setFilter] = useState("all");
-  const [theme, setTheme] = useState(() =>
-    window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-  );
-  console.log(`render: App (filter=${filter}, theme=${theme}, todos=${todos.length})`);
+  // ----- list state -----
+  const [tasks, setTasks] = useState([]);
+  const [listStatus, setListStatus] = useState("loading"); // loading | error | success
+  const [listError, setListError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
-  function addTodo(title, priority) {
-    setTodos([{ id: Date.now(), title, priority, status: "todo", resetKey: 0 }, ...todos]);
-  }
-  function removeTodo(id) {
-    setTodos(todos.filter((t) => t.id !== id));
-  }
-  function changeStatus(id, status) {
-    setTodos(todos.map((t) => (t.id === id ? { ...t, status } : t)));
-  }
-  // Changing resetKey changes the React key -> item remounts -> local state resets
-  function resetLocal(id) {
-    setTodos(todos.map((t) => (t.id === id ? { ...t, resetKey: t.resetKey + 1 } : t)));
-  }
-  function reverseList() {
-    setTodos([...todos].reverse());
+  // ----- details state -----
+  const [selectedId, setSelectedId] = useState(null);
+  const [details, setDetails] = useState(null);
+  const [detailsStatus, setDetailsStatus] = useState("idle"); // idle | loading | error | success
+  const [detailsError, setDetailsError] = useState("");
+
+  // ----- actions state -----
+  const [busyIds, setBusyIds] = useState([]); // ids with a request in flight
+  const [actionError, setActionError] = useState("");
+  const [form, setForm] = useState(null); // null | { mode: "create" } | { mode: "edit", task }
+  const [saving, setSaving] = useState(false);
+
+  // 1) Load the list. Re-runs when Reload is clicked.
+  useEffect(() => {
+    let ignore = false;
+    setListStatus("loading");
+    fetchTasks()
+      .then((data) => {
+        if (ignore) return;
+        setTasks(data);
+        setListStatus("success");
+      })
+      .catch((e) => {
+        if (ignore) return;
+        setListError(e.message);
+        setListStatus("error");
+      });
+    return () => { ignore = true; };
+  }, [reloadKey]);
+
+  // 2) Load details of the selected task. RACE-CONDITION SAFE via cleanup flag.
+  useEffect(() => {
+    if (selectedId === null) {
+      setDetails(null);
+      setDetailsStatus("idle");
+      return;
+    }
+    let ignore = false;
+    setDetails(null);
+    setDetailsStatus("loading");
+    fetchTaskDetails(selectedId)
+      .then((data) => {
+        if (ignore) return; // outdated response, discard
+        setDetails(data);
+        setDetailsStatus("success");
+      })
+      .catch((e) => {
+        if (ignore) return;
+        setDetailsError(e.message);
+        setDetailsStatus("error");
+      });
+    return () => { ignore = true; }; // runs when selectedId changes / unmount
+  }, [selectedId]);
+
+  // ----- helpers -----
+  function markBusy(id) { setBusyIds((prev) => [...prev, id]); }
+  function unmarkBusy(id) { setBusyIds((prev) => prev.filter((x) => x !== id)); }
+  const isBusy = (id) => busyIds.includes(id);
+
+  // Keeps list + details in sync using FUNCTIONAL updates and the captured id
+  function applyUpdate(updated) {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === updated.id
+          ? { id: t.id, title: updated.title, status: updated.status, priority: updated.priority }
+          : t
+      )
+    );
+    setDetails((prev) => (prev && prev.id === updated.id ? updated : prev));
   }
 
-  const counts = {
-    all: todos.length,
-    todo: todos.filter((t) => t.status === "todo").length,
-    doing: todos.filter((t) => t.status === "doing").length,
-    done: todos.filter((t) => t.status === "done").length,
-  };
-  const anyVisible = filter === "all" ? todos.length > 0 : counts[filter] > 0;
+  // ----- Complete (stale-closure-safe) -----
+  async function handleComplete(taskId) {
+    // taskId is captured NOW. Even if the user selects another item
+    // while we wait, the response still updates the right task.
+    if (isBusy(taskId)) return; // block conflicting actions
+    setActionError("");
+    markBusy(taskId);
+    try {
+      const updated = await completeTask(taskId);
+      applyUpdate(updated);
+    } catch (e) {
+      setActionError(`Could not complete task: ${e.message}`);
+    } finally {
+      unmarkBusy(taskId);
+    }
+  }
 
+  // ----- Remove -----
+  async function handleRemove(taskId) {
+    if (isBusy(taskId)) return;
+    if (!window.confirm("Delete this task?")) return;
+    setActionError("");
+    markBusy(taskId);
+    try {
+      await removeTask(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      setSelectedId((cur) => (cur === taskId ? null : cur));
+    } catch (e) {
+      setActionError(`Could not delete task: ${e.message}`);
+    } finally {
+      unmarkBusy(taskId);
+    }
+  }
+
+  // ----- Create / Edit -----
+  async function handleSave(values) {
+    setSaving(true);
+    setActionError("");
+    try {
+      if (form.mode === "create") {
+        const created = await createTask(values);
+        setTasks((prev) => [
+          ...prev,
+          { id: created.id, title: created.title, status: created.status, priority: created.priority },
+        ]);
+      } else {
+        const id = form.task.id; // captured id
+        markBusy(id);
+        try {
+          const updated = await updateTask(id, values);
+          applyUpdate(updated);
+        } finally {
+          unmarkBusy(id);
+        }
+      }
+      setForm(null);
+    } catch (e) {
+      setActionError(`Save failed: ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ----- render -----
   return (
-    <div className="shell" data-theme={theme}>
-    <main className="app">
+    <div className="app">
       <header>
-        <div>
-          <h1>Study Desk</h1>
-          <p>{counts.done} of {counts.all} tasks done</p>
+        <h1>Task Manager</h1>
+        <div className="row">
+          <button onClick={() => setReloadKey((k) => k + 1)} disabled={listStatus === "loading"}>
+            ↻ Reload
+          </button>
+          <button onClick={() => setForm({ mode: "create" })}>+ New task</button>
         </div>
-        <button
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-        >
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
       </header>
 
-      <AddTodoForm onAdd={addTodo} />
-
-      <div className="toolbar">
-        <div className="filters" role="group" aria-label="Filter by status">
-          {["all", ...STATUSES].map((f) => (
-            <button
-              key={f}
-              className={filter === f ? "chip active" : "chip"}
-              aria-pressed={filter === f}
-              onClick={() => setFilter(f)}
-            >
-              {f === "all" ? "All" : STATUS_LABEL[f]} ({counts[f]})
-            </button>
-          ))}
+      {actionError && (
+        <div className="banner error" role="alert">
+          {actionError} <button className="link" onClick={() => setActionError("")}>dismiss</button>
         </div>
-        <button onClick={reverseList}>Reverse order</button>
-      </div>
+      )}
 
-      <ul className="list">
-        {todos.map((todo) => (
-          <TodoItem
-            key={`${todo.id}-${todo.resetKey}`}
-            todo={todo}
-            visible={filter === "all" || todo.status === filter}
-            onStatusChange={changeStatus}
-            onRemove={removeTodo}
-            onResetLocal={resetLocal}
-          />
-        ))}
-      </ul>
-      {!anyVisible && <p className="empty">No tasks here. Add one above or change the filter.</p>}
-    </main>
+      <main className="layout">
+        {/* LIST */}
+        <section className="panel">
+          <h2>Tasks</h2>
+          {listStatus === "loading" && <p className="muted">Loading tasks...</p>}
+          {listStatus === "error" && (
+            <div className="banner error">
+              {listError}{" "}
+              <button onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+            </div>
+          )}
+          {listStatus === "success" && tasks.length === 0 && (
+            <p className="muted">No tasks yet. Create your first one!</p>
+          )}
+          {listStatus === "success" && tasks.length > 0 && (
+            <ul className="list">
+              {tasks.map((t) => (
+                <li
+                  key={t.id}
+                  className={t.id === selectedId ? "item selected" : "item"}
+                  onClick={() => setSelectedId(t.id)}
+                >
+                  <span>{t.title}</span>
+                  <span className={`badge ${t.status}`}>{t.status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* DETAILS / FORM */}
+        <section className="panel">
+          {form ? (
+            <TaskForm
+              key={form.mode === "edit" ? form.task.id : "new"}
+              initial={form.mode === "edit" ? form.task : null}
+              saving={saving}
+              onSave={handleSave}
+              onCancel={() => setForm(null)}
+            />
+          ) : (
+            <>
+              <h2>Details</h2>
+              {detailsStatus === "idle" && <p className="muted">Select a task to see details.</p>}
+              {detailsStatus === "loading" && <p className="muted">Loading details...</p>}
+              {detailsStatus === "error" && (
+                <div className="banner error">
+                  {detailsError}{" "}
+                  <button onClick={() => { const id = selectedId; setSelectedId(null); setTimeout(() => setSelectedId(id), 0); }}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {detailsStatus === "success" && details && (
+                <div>
+                  <h3>{details.title}</h3>
+                  <dl className="fields">
+                    <dt>Status</dt><dd><span className={`badge ${details.status}`}>{details.status}</span></dd>
+                    <dt>Priority</dt><dd>{details.priority}</dd>
+                    <dt>Assignee</dt><dd>{details.assignee || "—"}</dd>
+                    <dt>Category</dt><dd>{details.category || "—"}</dd>
+                    <dt>Estimate</dt><dd>{details.estimateHours} h</dd>
+                    <dt>Due date</dt><dd>{details.dueDate || "—"}</dd>
+                    <dt>Description</dt><dd>{details.description || "—"}</dd>
+                    <dt>Created</dt><dd>{new Date(details.createdAt).toLocaleString()}</dd>
+                    <dt>Updated</dt><dd>{new Date(details.updatedAt).toLocaleString()}</dd>
+                  </dl>
+                  <div className="row">
+                    <button
+                      onClick={() => handleComplete(details.id)}
+                      disabled={isBusy(details.id) || details.status === "done"}
+                    >
+                      {isBusy(details.id) ? "Working..." : "✓ Mark complete"}
+                    </button>
+                    <button className="secondary" onClick={() => setForm({ mode: "edit", task: details })} disabled={isBusy(details.id)}>
+                      Edit
+                    </button>
+                    <button className="danger" onClick={() => handleRemove(details.id)} disabled={isBusy(details.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
