@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  fetchTasks, fetchTaskDetails, createTask, updateTask, removeTask, completeTask,
-} from "./api/fakeApi";
+import { fetchTasks, fetchTaskDetails, createTask, updateTask, removeTask, completeTask } from "./api/FakeApi";
 import TaskForm from "./components/TaskForm";
 
 export default function App() {
